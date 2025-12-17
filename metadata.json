@@ -1,0 +1,5 @@
+{
+  "name": "Kanjō Voice AI",
+  "description": "Gemini 2.5を使用して、テキストを感情豊かな音声に変換する日本語対応アプリ。",
+  "requestFramePermissions": []
+}
