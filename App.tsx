@@ -53,6 +53,8 @@ const App: React.FC = () => {
   const [contextDescription, setContextDescription] = usePersistentState<string>('kanjo_context', "");
   const [isScriptMode, setIsScriptMode] = usePersistentState<boolean>('kanjo_script_mode', false);
   const [apiKey, setApiKey] = usePersistentState<string>('kanjo_api_key', "");
+  const [remainingCount, setRemainingCount] = usePersistentState<number>('kanjo_remaining', 10);
+  const [lastResetDate, setLastResetDate] = usePersistentState<string>('kanjo_last_reset', "");
 
   // Derived State from IDs
   const selectedVoice = VOICES.find(v => v.id === selectedVoiceId) || VOICES[0];
@@ -95,6 +97,41 @@ const App: React.FC = () => {
       setScriptText(text);
     }
   }, [isScriptMode, convLines]);
+
+  // Reset logic: 17:00 JST
+  useEffect(() => {
+    const checkReset = () => {
+      const now = new Date();
+      // JST is UTC+9. 17:00 JST is 08:00 UTC.
+      // But we can just use local time since the user is in Japan (or wants JST).
+      // However, for reliability, let's calculate based on "today's 17:00".
+
+      const today17 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 0, 0);
+
+      // We need a unique ID for "this period". 
+      // A period starts at 17:00 and ends the next day at 17:00.
+      // If currently before 17:00, the "period start" was yesterday 17:00.
+      // If currently after 17:00, the "period start" is today 17:00.
+      let periodStartStr = "";
+      if (now < today17) {
+        const yesterday = new Date(today17);
+        yesterday.setDate(yesterday.getDate() - 1);
+        periodStartStr = yesterday.toISOString().split('T')[0] + " 17:00";
+      } else {
+        periodStartStr = today17.toISOString().split('T')[0] + " 17:00";
+      }
+
+      if (lastResetDate !== periodStartStr) {
+        setRemainingCount(10);
+        setLastResetDate(periodStartStr);
+        console.log("Quota reset to 10 for period starting:", periodStartStr);
+      }
+    };
+
+    checkReset();
+    const timer = setInterval(checkReset, 60000); // Check every minute
+    return () => clearInterval(timer);
+  }, [lastResetDate, setRemainingCount, setLastResetDate]);
 
   // Audio Player Logic
   const stopSource = () => {
@@ -349,6 +386,9 @@ const App: React.FC = () => {
         setConvLines(linesToUse);
       }
 
+      // Decrement remaining count
+      setRemainingCount(prev => Math.max(0, prev - 1));
+
     } catch (error: any) {
       console.error("Failed to generate:", error);
       alert(`エラーが発生しました: ${error.message || "不明なエラー"}`);
@@ -398,10 +438,10 @@ const App: React.FC = () => {
           return (
             <div key={idx} className={`flex ${type === 'A' ? 'justify-start' : type === 'B' ? 'justify-end' : 'justify-center'}`}>
               <div className={`max-w-[85%] rounded-lg px-3 py-1.5 text-xs ${type === 'A'
-                  ? 'bg-indigo-900/40 text-indigo-100 border border-indigo-500/30 rounded-tl-none'
-                  : type === 'B'
-                    ? 'bg-purple-900/40 text-purple-100 border border-purple-500/30 rounded-tr-none'
-                    : 'bg-gradient-to-r from-indigo-900/40 to-purple-900/40 text-slate-100 border border-slate-500/30 font-bold'
+                ? 'bg-indigo-900/40 text-indigo-100 border border-indigo-500/30 rounded-tl-none'
+                : type === 'B'
+                  ? 'bg-purple-900/40 text-purple-100 border border-purple-500/30 rounded-tr-none'
+                  : 'bg-gradient-to-r from-indigo-900/40 to-purple-900/40 text-slate-100 border border-slate-500/30 font-bold'
                 }`}>
                 {content}
               </div>
@@ -462,7 +502,16 @@ const App: React.FC = () => {
             感情ボイス AI
           </h1>
         </div>
-        <p className="text-slate-400">Gemini 2.5 日本語 Text-to-Speech</p>
+        <p className="text-slate-400 mb-4">Gemini 2.5 日本語 Text-to-Speech</p>
+
+        {/* Remaining Count Badge */}
+        <div className="inline-flex items-center gap-2 px-4 py-1.5 bg-slate-800/80 border border-slate-700/50 rounded-full shadow-lg backdrop-blur-sm">
+          <div className={`w-2 h-2 rounded-full animate-pulse ${remainingCount > 3 ? 'bg-green-500' : remainingCount > 0 ? 'bg-yellow-500' : 'bg-red-500'}`} />
+          <span className="text-xs font-semibold text-slate-300">
+            今日の残り生成回数: <span className={`text-sm ${remainingCount === 0 ? 'text-red-400' : 'text-indigo-400'}`}>{remainingCount}</span> / 10
+          </span>
+          <span className="text-[10px] text-slate-500 ml-1">(毎日 17:00 リセット)</span>
+        </div>
       </header>
 
       {/* Main Container */}
@@ -476,8 +525,8 @@ const App: React.FC = () => {
             <button
               onClick={() => setMode('single')}
               className={`flex-1 py-2 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-all ${mode === 'single'
-                  ? 'bg-indigo-600 text-white shadow-lg'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                ? 'bg-indigo-600 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
                 }`}
             >
               <User className="w-4 h-4" /> シングル (1人)
@@ -485,8 +534,8 @@ const App: React.FC = () => {
             <button
               onClick={() => setMode('conversation')}
               className={`flex-1 py-2 px-4 rounded-lg flex items-center justify-center gap-2 font-medium transition-all ${mode === 'conversation'
-                  ? 'bg-purple-600 text-white shadow-lg'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                ? 'bg-purple-600 text-white shadow-lg'
+                : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
                 }`}
             >
               <Users className="w-4 h-4" /> 会話 (2人)
@@ -631,8 +680,8 @@ const App: React.FC = () => {
                       else setIsScriptMode(true);
                     }}
                     className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded transition-colors ${isScriptMode
-                        ? 'bg-slate-700 text-white font-bold'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                      ? 'bg-slate-700 text-white font-bold'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
                       }`}
                   >
                     <FileText className="w-3 h-3" /> スクリプト編集
@@ -640,8 +689,8 @@ const App: React.FC = () => {
                   <button
                     onClick={() => setIsScriptMode(false)}
                     className={`flex items-center gap-1 text-xs px-3 py-1.5 rounded transition-colors ${!isScriptMode
-                        ? 'bg-slate-700 text-white font-bold'
-                        : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
+                      ? 'bg-slate-700 text-white font-bold'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
                       }`}
                   >
                     <List className="w-3 h-3" /> 吹き出しモード
@@ -693,10 +742,10 @@ const App: React.FC = () => {
                           )}
 
                           <div className={`relative group max-w-[80%] p-3 rounded-2xl text-sm ${line.speaker === 'A'
-                              ? 'bg-indigo-900/60 text-indigo-100 rounded-tl-none border border-indigo-500/20'
-                              : line.speaker === 'B'
-                                ? 'bg-purple-900/60 text-purple-100 rounded-tr-none border border-purple-500/20'
-                                : 'bg-gradient-to-r from-indigo-900/60 to-purple-900/60 text-slate-100 border border-slate-500/30 text-center mx-4 font-bold'
+                            ? 'bg-indigo-900/60 text-indigo-100 rounded-tl-none border border-indigo-500/20'
+                            : line.speaker === 'B'
+                              ? 'bg-purple-900/60 text-purple-100 rounded-tr-none border border-purple-500/20'
+                              : 'bg-gradient-to-r from-indigo-900/60 to-purple-900/60 text-slate-100 border border-slate-500/30 text-center mx-4 font-bold'
                             }`}>
                             {line.text}
                             <button
@@ -780,8 +829,8 @@ const App: React.FC = () => {
             onClick={handleGenerate}
             disabled={isGenerating || !hasContent}
             className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg flex items-center justify-center gap-2 transition-all transform active:scale-[0.98] ${isGenerating || !hasContent
-                ? "bg-slate-700 text-slate-500 cursor-not-allowed"
-                : "bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white shadow-indigo-500/25"
+              ? "bg-slate-700 text-slate-500 cursor-not-allowed"
+              : "bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-400 hover:to-purple-400 text-white shadow-indigo-500/25"
               }`}
           >
             {isGenerating ? (
@@ -880,8 +929,8 @@ const App: React.FC = () => {
                   key={item.id}
                   onClick={() => playAudio(item.id, item.audioBuffer)}
                   className={`group relative p-4 rounded-xl border transition-all cursor-pointer hover:shadow-lg ${currentlyPlayingId === item.id
-                      ? "bg-slate-700/80 border-indigo-500/50 ring-1 ring-indigo-500/20"
-                      : "bg-slate-800 border-slate-700 hover:bg-slate-750 hover:border-slate-600"
+                    ? "bg-slate-700/80 border-indigo-500/50 ring-1 ring-indigo-500/20"
+                    : "bg-slate-800 border-slate-700 hover:bg-slate-750 hover:border-slate-600"
                     }`}
                 >
                   <div className="flex justify-between items-start mb-2 border-b border-slate-700/50 pb-2">
